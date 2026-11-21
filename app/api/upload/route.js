@@ -7,8 +7,6 @@ import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { randomUUID } from "crypto";
 import storj from "@/lib/storj";
 
-export const runtime = "nodejs";
-
 export async function POST(request) {
   try {
     // 1. Verify logged-in user

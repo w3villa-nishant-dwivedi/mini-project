@@ -48,8 +48,8 @@ export function DropBox() {
             <DropzoneMessage />
           </div>
 
-          <DropZoneArea className=" bg-background/20 border-background/50 hover:bg-background/30 hover:border-background/70">
-            <DropzoneTrigger className="flex flex-col items-center gap-4 bg-background/20 p-10 text-center text-sm">
+          <DropZoneArea className=" bg-black/10 border-background/50 hover:bg-gray-900 hover:border-background/70">
+            <DropzoneTrigger className="flex flex-col items-center gap-4 bg-black/10 p-10 text-center text-sm">
               <CloudUploadIcon className="size-8" />
 
               <div>

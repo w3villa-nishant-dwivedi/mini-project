@@ -4,8 +4,12 @@ import { UserButton } from "@clerk/nextjs";
 import { DropBox } from "@/components/DropBox";
 import { CreateRoom } from "@/components/CreateRoom";
 
+import {ShowToken} from "@/components/ShowToken";
+import JoinRoom from "@/components/JoinRoom";
+
 export default async function Dashboard() {
   await auth.protect();
+
 
   return (
     <main className="min-h-screen  -mt-16 bg-gray-950 px-6 py-40 text-white">
@@ -21,7 +25,7 @@ export default async function Dashboard() {
         <h1 className="text-4xl font-bold">
           Welcome to CineMeet 🎬
         </h1>
-       <DropBox/>
+       
 
         <p className="mt-3 text-gray-400">
           Watch movies together, even when you are apart.
@@ -51,11 +55,10 @@ export default async function Dashboard() {
               Join your friends using a room code.
             </p>
 
-            <button className="mt-6 rounded-lg border border-gray-700 px-5 py-3 font-medium hover:bg-gray-800">
-              Join Room
-            </button>
+            <JoinRoom/>
           </div>
         </div>
+        <ShowToken />
       </section>
     </main>
   );

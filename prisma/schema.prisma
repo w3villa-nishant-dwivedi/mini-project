@@ -72,6 +72,9 @@ model Room {
   createdAt   DateTime   @default(now())
   videoId String?
   video   Video? @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  playbackPosition Float @default(0)
+  playbackIsPlaying Boolean @default(false)
+  playbackUpdatedAt DateTime @default(now())
 
   host    User         @relation("RoomHost", fields: [hostId], references: [id])
   members RoomMember[]

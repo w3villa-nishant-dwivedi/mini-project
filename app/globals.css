@@ -128,3 +128,12 @@
     @apply font-sans;
   }
 }
+
+.room-chat-messages {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.room-chat-messages::-webkit-scrollbar {
+  display: none;
+}
