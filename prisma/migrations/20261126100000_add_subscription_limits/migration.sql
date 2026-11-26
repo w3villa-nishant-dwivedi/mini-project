@@ -1,0 +1,8 @@
+CREATE TYPE "SubscriptionPlan" AS ENUM ('FREE', 'SILVER', 'GOLD');
+
+ALTER TABLE "User"
+ADD COLUMN "subscriptionPlan" "SubscriptionPlan" NOT NULL DEFAULT 'FREE';
+
+ALTER TABLE "Room"
+ADD COLUMN "maxUploadBytes" BIGINT NOT NULL DEFAULT 104857600,
+ADD COLUMN "maxDurationHours" INTEGER NOT NULL DEFAULT 1;

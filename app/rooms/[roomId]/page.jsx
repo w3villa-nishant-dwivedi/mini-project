@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, use, useEffect, useState } from "react";
+import { Suspense, use, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useUser } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
@@ -67,6 +67,20 @@ function RoomPageContent({ params }) {
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const theaterRef = useRef(null);
+  const [isTheaterFullscreen, setIsTheaterFullscreen] = useState(false);
+
+  useEffect(() => {
+    function updateFullscreenState() {
+      setIsTheaterFullscreen(
+        document.fullscreenElement === theaterRef.current
+      );
+    }
+
+    document.addEventListener("fullscreenchange", updateFullscreenState);
+    return () =>
+      document.removeEventListener("fullscreenchange", updateFullscreenState);
+  }, []);
 
   // Fetch room details
   useEffect(() => {
@@ -98,6 +112,31 @@ function RoomPageContent({ params }) {
     fetchRoom();
   }, [roomId, isLoaded, isSignedIn]);
 
+  useEffect(() => {
+    if (!room?.expiresAt) return undefined;
+
+    const remainingMs = Date.parse(room.expiresAt) - Date.now();
+    const timeoutId = setTimeout(() => {
+      async function endExpiredRoom() {
+        try {
+          const response = await fetch(`/api/rooms/${roomId}`, {
+            cache: "no-store",
+          });
+          if (!response.ok && response.status !== 410) {
+            throw new Error("Could not mark the expired room as ended.");
+          }
+        } catch (expirationError) {
+          console.error("Room expiry request failed:", expirationError);
+        } finally {
+          router.replace("/dashboard");
+        }
+      }
+
+      void endExpiredRoom();
+    }, Math.max(remainingMs, 0));
+    return () => clearTimeout(timeoutId);
+  }, [room?.expiresAt, roomId, router]);
+
   async function copyInviteCode() {
     try {
       await navigator.clipboard.writeText(room.inviteCode);
@@ -105,6 +144,17 @@ function RoomPageContent({ params }) {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       setCopied(false);
+    }
+  }
+
+  async function toggleTheaterFullscreen() {
+    const theater = theaterRef.current;
+    if (!theater) return;
+
+    if (document.fullscreenElement === theater) {
+      await document.exitFullscreen();
+    } else {
+      await theater.requestFullscreen();
     }
   }
 
@@ -216,6 +266,12 @@ function RoomPageContent({ params }) {
               Hosted by{" "}
               <span className="text-gray-200">{room.host?.name || "Host"}</span>
             </p>
+            <p className="mt-1 text-xs text-gray-500">
+              Up to {room.maxMembers} members ·{" "}
+              {formatUploadLimit(room.maxUploadBytes)} per video · ends{" "}
+              {room.maxDurationHours}{" "}
+              {room.maxDurationHours === 1 ? "hour" : "hours"} after creation
+            </p>
           </div>
 
           {currentUserRole === "HOST" && (
@@ -240,26 +296,43 @@ function RoomPageContent({ params }) {
 
         {/* Theater: video + chat */}
         {/* Mobile: video upar, chat neeche (alag).  md/lg+: chat video ke andar overlay */}
-        <section className="flex flex-col gap-4 md:relative md:block md:aspect-video md:max-h-[100vh] md:w-full md:overflow-hidden md:rounded-2xl md:border md:border-gray-800 md:bg-black md:shadow-2xl md:shadow-black/50">
+        <section
+          ref={theaterRef}
+          className={`flex flex-col gap-4 md:relative md:block md:aspect-video md:max-h-[100vh] md:w-full md:overflow-hidden md:rounded-2xl md:border md:border-gray-800 md:bg-black md:shadow-2xl md:shadow-black/50 ${
+            isTheaterFullscreen ? "theater-fullscreen" : ""
+          }`}
+        >
           {/* Video */}
-          <div className="aspect-video w-full overflow-hidden rounded-2xl border border-gray-800 bg-black md:absolute md:inset-0 md:aspect-auto md:rounded-none md:border-0 [&>*]:h-full [&>*]:w-full">
+          <div
+            className={`aspect-video w-full overflow-hidden rounded-2xl border border-gray-800 bg-black md:absolute md:inset-0 md:aspect-auto md:rounded-none md:border-0 [&>*]:h-full [&>*]:w-full ${
+              isTheaterFullscreen ? "theater-fullscreen-video" : ""
+            }`}
+          >
             <RoomVideoPlayer
               roomId={room.id}
               isHost={currentUserRole === "HOST"}
+              isFullscreen={isTheaterFullscreen}
+              onToggleFullscreen={toggleTheaterFullscreen}
+              maxUploadBytes={room.maxUploadBytes}
             />
           </div>
 
           {/* Chat */}
           <div
-            className="
+            className={`
               h-[120px] overflow-hidden rounded-2xl border border-gray-800 bg-gray-900
               md:pointer-events-none md:absolute md:inset-y-0 md:right-0 md:z-10 md:h-auto
               md:w-[280px] lg:w-[340px] xl:w-[380px]
               md:rounded-none md:border-0 md:bg-transparent
               md:[&>*]:pointer-events-auto md:[&>*]:h-full md:[&>*]:!bg-transparent md:[&>*]:!border-0 md:[&>*]:!shadow-none
-            "
+              ${isTheaterFullscreen ? "theater-fullscreen-chat" : ""}
+            `}
           >
-            <RoomChat roomId={room.id} overlay />
+            <RoomChat
+              roomId={room.id}
+              overlay
+              fullscreen={isTheaterFullscreen}
+            />
           </div>
         </section>
 
@@ -347,4 +420,11 @@ function RoomPageContent({ params }) {
       </div>
     </main>
   );
+}
+
+function formatUploadLimit(bytes) {
+  const megabytes = bytes / (1024 * 1024);
+  return megabytes >= 1024
+    ? `${Number((megabytes / 1024).toFixed(1))} GB`
+    : `${megabytes} MB`;
 }

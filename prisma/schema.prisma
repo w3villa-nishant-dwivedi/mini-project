@@ -14,8 +14,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
-
 enum RoomStatus {
   WAITING
   LIVE
@@ -27,14 +25,20 @@ enum RoomRole {
   MEMBER
 }
 
+enum SubscriptionPlan {
+  FREE
+  SILVER
+  GOLD
+}
 
 model User {
-  id        String   @id @default(cuid())
-  clerkId   String   @unique
-  email     String   @unique
-  name      String?
-  imageUrl  String?
+  id              String  @id @default(cuid())
+  clerkId         String  @unique
+  email           String  @unique
+  name            String?
+  imageUrl        String?
   profileImageKey String?
+  subscriptionPlan SubscriptionPlan @default(FREE)
 
   dateOfBirth DateTime?
 
@@ -53,31 +57,33 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  hostedRooms   Room[]       @relation("RoomHost")
-  memberships   RoomMember[]
-  messages      Message[]
+  hostedRooms    Room[]            @relation("RoomHost")
+  memberships    RoomMember[]
+  messages       Message[]
+  reactions      MessageReaction[]
   uploadedVideos Video[]
 }
 
-
 model Room {
-  id          String     @id @default(cuid())
-  name        String
-  description String?
-  inviteCode  String     @unique @default(cuid())
-  status      RoomStatus @default(WAITING)
-  isPrivate   Boolean    @default(true)
-  maxMembers  Int        @default(10)
-  hostId      String
-  createdAt   DateTime   @default(now())
-  videoId String?
-  video   Video? @relation(fields: [videoId], references: [id], onDelete: SetNull)
-  playbackPosition Float @default(0)
-  playbackIsPlaying Boolean @default(false)
-  playbackUpdatedAt DateTime @default(now())
+  id                String     @id @default(cuid())
+  name              String
+  description       String?
+  inviteCode        String     @unique @default(cuid())
+  status            RoomStatus @default(WAITING)
+  isPrivate         Boolean    @default(true)
+  maxMembers        Int        @default(10)
+  maxUploadBytes    BigInt     @default(104857600)
+  maxDurationHours  Int        @default(1)
+  hostId            String
+  createdAt         DateTime   @default(now())
+  videoId           String?
+  video             Video?     @relation(fields: [videoId], references: [id], onDelete: SetNull)
+  playbackPosition  Float      @default(0)
+  playbackIsPlaying Boolean    @default(false)
+  playbackUpdatedAt DateTime   @default(now())
 
-  host    User         @relation("RoomHost", fields: [hostId], references: [id])
-  members RoomMember[]
+  host     User         @relation("RoomHost", fields: [hostId], references: [id])
+  members  RoomMember[]
   messages Message[]
 }
 
@@ -100,28 +106,39 @@ model Message {
   userId    String
   createdAt DateTime @default(now())
 
-  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room      Room              @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user      User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  reactions MessageReaction[]
 }
 
+model MessageReaction {
+  id        String   @id @default(cuid())
+  emoji     String
+  messageId String
+  userId    String
+  createdAt DateTime @default(now())
 
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([messageId, userId, emoji])
+  @@index([messageId])
+}
 
 model Video {
-  id          String   @id @default(cuid())
-  title       String
-  description String?
-  videoUrl    String
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  videoUrl     String
   thumbnailUrl String?
-  storageKey  String   @unique
-  duration    Int?
-  fileSize    BigInt?
-  mimeType    String?
-  uploadedAt  DateTime @default(now())
+  storageKey   String   @unique
+  duration     Int?
+  fileSize     BigInt?
+  mimeType     String?
+  uploadedAt   DateTime @default(now())
 
-  uploaderId  String
-  uploader    User     @relation(fields: [uploaderId], references: [id])
+  uploaderId String
+  uploader   User   @relation(fields: [uploaderId], references: [id])
 
-  rooms       Room[]
+  rooms Room[]
 }
-
-

@@ -3,8 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Maximize, Minimize, Pause, Play } from "lucide-react";
 
-const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
-
 function formatTime(seconds) {
   if (!Number.isFinite(seconds)) return "0:00";
 
@@ -20,6 +18,13 @@ function formatTime(seconds) {
   ).padStart(2, "0")}`;
 }
 
+function formatFileSize(bytes) {
+  const megabytes = bytes / (1024 * 1024);
+  return megabytes >= 1024
+    ? `${Number((megabytes / 1024).toFixed(1))} GB`
+    : `${megabytes} MB`;
+}
+
 async function readResponse(response, fallbackMessage) {
   const data = await response.json();
   if (!response.ok) {
@@ -28,9 +33,15 @@ async function readResponse(response, fallbackMessage) {
   return data;
 }
 
-export default function RoomVideoPlayer({ roomId, isHost }) {
+export default function RoomVideoPlayer({
+  roomId,
+  isHost,
+  isFullscreen,
+  onToggleFullscreen,
+  maxUploadBytes,
+}) {
   const playerRef = useRef(null);
-  const playerContainerRef = useRef(null);
+  const controlsTimeoutRef = useRef(null);
   const [video, setVideo] = useState(null);
   const [playback, setPlayback] = useState(null);
   const [uploading, setUploading] = useState(false);
@@ -40,19 +51,7 @@ export default function RoomVideoPlayer({ roomId, isHost }) {
   const [duration, setDuration] = useState(0);
   const [seekPreview, setSeekPreview] = useState(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-
-  useEffect(() => {
-    function updateFullscreenState() {
-      setIsFullscreen(
-        document.fullscreenElement === playerContainerRef.current
-      );
-    }
-
-    document.addEventListener("fullscreenchange", updateFullscreenState);
-    return () =>
-      document.removeEventListener("fullscreenchange", updateFullscreenState);
-  }, []);
+  const [controlsVisible, setControlsVisible] = useState(true);
 
   const loadVideo = useCallback(async () => {
     const response = await fetch(`/api/rooms/${roomId}/video`, {
@@ -115,6 +114,32 @@ export default function RoomVideoPlayer({ roomId, isHost }) {
     };
   }, [roomId]);
 
+  useEffect(() => {
+    function showControls() {
+      setControlsVisible(true);
+      clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = setTimeout(() => {
+        setControlsVisible(false);
+      }, 4000);
+    }
+
+    if (!isPlaying) {
+      clearTimeout(controlsTimeoutRef.current);
+      setControlsVisible(true);
+      return undefined;
+    }
+
+    document.addEventListener("pointermove", showControls);
+    document.addEventListener("pointerdown", showControls);
+    showControls();
+
+    return () => {
+      document.removeEventListener("pointermove", showControls);
+      document.removeEventListener("pointerdown", showControls);
+      clearTimeout(controlsTimeoutRef.current);
+    };
+  }, [isPlaying]);
+
   const publishPlayback = useCallback(
     async (position, isPlaying) => {
       const response = await fetch(`/api/rooms/${roomId}/playback`, {
@@ -164,8 +189,8 @@ export default function RoomVideoPlayer({ roomId, isHost }) {
     if (!file) return;
 
     setError("");
-    if (file.size > MAX_VIDEO_SIZE) {
-      setError("Video must be 100 MB or smaller.");
+    if (file.size > maxUploadBytes) {
+      setError(`Video must be ${formatFileSize(maxUploadBytes)} or smaller.`);
       input.value = "";
       return;
     }
@@ -292,15 +317,8 @@ export default function RoomVideoPlayer({ roomId, isHost }) {
   }
 
   async function toggleFullscreen() {
-    const container = playerContainerRef.current;
-    if (!container) return;
-
     try {
-      if (document.fullscreenElement === container) {
-        await document.exitFullscreen();
-      } else {
-        await container.requestFullscreen();
-      }
+      await onToggleFullscreen();
     } catch (fullscreenError) {
       setError(fullscreenError.message || "Could not open fullscreen mode.");
     }
@@ -316,10 +334,10 @@ export default function RoomVideoPlayer({ roomId, isHost }) {
     <section className="relative h-full min-h-0 w-full overflow-hidden rounded-2xl border border-white/10 bg-black">
       {video ? (
         <div
-          ref={playerContainerRef}
+          aria-label="Room video player"
           className={`overflow-hidden bg-black ${
             isFullscreen
-              ? "fixed inset-0 z-[100] h-dvh w-screen rounded-none"
+              ? "relative h-full w-full"
               : "absolute inset-0"
           }`}
         >
@@ -366,7 +384,13 @@ export default function RoomVideoPlayer({ roomId, isHost }) {
             </button>
           )}
 
-          <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/95 via-black/70 to-transparent px-3 pb-3 pt-10 text-white sm:px-4 sm:pb-4">
+          <div
+            className={`absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/95 via-black/70 to-transparent px-3 pb-3 pt-10 text-white transition-opacity duration-300 sm:px-4 sm:pb-4 ${
+              controlsVisible
+                ? "opacity-100"
+                : "pointer-events-none opacity-0"
+            }`}
+          >
             <div className="mb-1 flex items-center justify-between gap-3">
               <button
                 type="button"

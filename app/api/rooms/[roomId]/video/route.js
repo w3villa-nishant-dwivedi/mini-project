@@ -11,7 +11,6 @@ import prisma from "@/lib/prisma";
 import { getRoomAccess } from "@/lib/roomAccess";
 import storj from "@/lib/storj";
 
-const MAX_VIDEO_SIZE = 100 * 1024 * 1024;
 const ALLOWED_VIDEO_TYPES = new Set([
   "video/mp4",
   "video/webm",
@@ -31,6 +30,13 @@ function accessError(access) {
     { error: access.error },
     { status: access.status }
   );
+}
+
+function formatFileSize(bytes) {
+  const megabytes = bytes / (1024 * 1024);
+  return megabytes >= 1024
+    ? `${Number((megabytes / 1024).toFixed(1))} GB`
+    : `${megabytes} MB`;
 }
 
 export async function GET(_request, { params }) {
@@ -100,6 +106,7 @@ export async function POST(request, { params }) {
     const { roomId } = await params;
     const access = await getRoomAccess(roomId, userId);
     if (access.error) return accessError(access);
+    const maxUploadBytes = Number(access.room.maxUploadBytes);
 
     if (access.membership.role !== "HOST") {
       return NextResponse.json(
@@ -117,10 +124,12 @@ export async function POST(request, { params }) {
         !ALLOWED_VIDEO_TYPES.has(contentType) ||
         !Number.isInteger(fileSize) ||
         fileSize <= 0 ||
-        fileSize > MAX_VIDEO_SIZE
+        fileSize > maxUploadBytes
       ) {
         return NextResponse.json(
-          { error: "Choose an MP4, WebM, or MOV video up to 100 MB" },
+          {
+            error: `Choose an MP4, WebM, or MOV video up to ${formatFileSize(maxUploadBytes)}`,
+          },
           { status: 400 }
         );
       }
@@ -161,11 +170,13 @@ export async function POST(request, { params }) {
 
       if (
         !uploadedObject.ContentLength ||
-        uploadedObject.ContentLength > MAX_VIDEO_SIZE ||
+        uploadedObject.ContentLength > maxUploadBytes ||
         !ALLOWED_VIDEO_TYPES.has(uploadedObject.ContentType)
       ) {
         return NextResponse.json(
-          { error: "The uploaded video is invalid or exceeds 100 MB" },
+          {
+            error: `The uploaded video is invalid or exceeds ${formatFileSize(maxUploadBytes)}`,
+          },
           { status: 400 }
         );
       }

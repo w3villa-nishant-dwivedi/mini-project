@@ -2,6 +2,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
+import { expireRoomIfNeeded } from "@/lib/roomAccess";
 
 export async function GET(request, { params }) {
   try {
@@ -58,12 +59,13 @@ export async function GET(request, { params }) {
       );
     }
 
-    if (room.status === "ENDED") {
-  return NextResponse.json(
-    { error: "This room has been ended by the host" },
-    { status: 410 }
-  );
-}
+    const expired = await expireRoomIfNeeded(room);
+    if (room.status === "ENDED" || expired) {
+      return NextResponse.json(
+        { message: "This room has ended or reached its time limit" },
+        { status: 410 }
+      );
+    }
 
     const isMember = room.members.some(
       (member) => member.userId === currentUser.id
@@ -85,6 +87,11 @@ export async function GET(request, { params }) {
         status: room.status,
         isPrivate: room.isPrivate,
         maxMembers: room.maxMembers,
+        maxUploadBytes: Number(room.maxUploadBytes),
+        maxDurationHours: room.maxDurationHours,
+        expiresAt: new Date(
+          room.createdAt.getTime() + room.maxDurationHours * 60 * 60 * 1000
+        ).toISOString(),
         createdAt: room.createdAt,
         host: room.host,
         currentUserRole: room.members.find(

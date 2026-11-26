@@ -5,18 +5,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 function appendMessages(current, incoming) {
-  const ids = new Set(current.map((message) => message.id));
-  return [
-    ...current,
-    ...incoming.filter((message) => !ids.has(message.id)),
-  ].slice(-100);
+  const messagesById = new Map(current.map((message) => [message.id, message]));
+  incoming.forEach((message) => messagesById.set(message.id, message));
+  return [...messagesById.values()].slice(-100);
 }
 
-export default function RoomChat({ roomId }) {
+export default function RoomChat({ roomId, fullscreen = false }) {
   const [messages, setMessages] = useState([]);
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [openReactionMenu, setOpenReactionMenu] = useState(null);
+  const [composerEmojiMenuOpen, setComposerEmojiMenuOpen] = useState(false);
+  const reactionEmojis = ["👍", "❤️", "😂", "😮", "😢", "🎉"];
   const cursorRef = useRef(null);
   const messagesEndRef = useRef(null);
   const scrollTimeoutRef = useRef(null);
@@ -112,9 +113,7 @@ export default function RoomChat({ roomId }) {
     }, 700);
   }
 
-  async function sendMessage(event) {
-    event.preventDefault();
-    const content = draft.trim();
+  async function postMessage(content, clearDraft = true) {
     if (!content || sending) return;
 
     setSending(true);
@@ -129,13 +128,12 @@ export default function RoomChat({ roomId }) {
       if (!response.ok) {
         throw new Error(data.error || "Could not send message");
       }
-
       cursorRef.current = {
         createdAt: data.message.createdAt,
         id: data.message.id,
       };
       setMessages((current) => appendMessages(current, [data.message]));
-      setDraft("");
+      if (clearDraft) setDraft("");
     } catch (sendError) {
       setError(sendError.message);
     } finally {
@@ -143,8 +141,42 @@ export default function RoomChat({ roomId }) {
     }
   }
 
+  function sendMessage(event) {
+    event.preventDefault();
+    void postMessage(draft.trim());
+  }
+
+  function sendEmojiMessage(emoji) {
+    setComposerEmojiMenuOpen(false);
+    void postMessage(emoji, false);
+  }
+
+  async function toggleReaction(messageId, emoji) {
+    try {
+      const response = await fetch(`/api/rooms/${roomId}/chat`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messageId, emoji }),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Could not add reaction");
+      }
+      setMessages((current) => appendMessages(current, [data.message]));
+      setOpenReactionMenu(null);
+    } catch (reactionError) {
+      setError(reactionError.message);
+    }
+  }
+
   return (
-    <section className="flex max-h-100 absolute bottom-20 right-5 min-w-10 flex-col rounded-2xl border border-white/10 bg-transparent p-4 sm:p-6 md:h-[420px] md:min-h-0 md:self-start lg:h-[460px]">
+    <section
+      className={`flex min-w-0 flex-col rounded-2xl border border-white/10 bg-transparent p-14 sm:p-6 ${
+        fullscreen
+          ? "relative h-full w-full  min-h-0 max-h-none rounded-none border-0"
+          : "max-h-100 absolute bottom-15 right-5 min-w-10 md:h-[420px] md:min-h-0 md:self-start lg:h-[460px]"
+      }`}
+    >
       <div className="flex items-center justify-between border-b border-white/10 pb-4">
         {/* <h2 className="text-lg font-semibold">Live chat</h2> */}
         <span className="flex absolute right-10 items-center gap-2 text-xs text-gray-400">
@@ -176,6 +208,41 @@ export default function RoomChat({ roomId }) {
               <p className="mt-1 whitespace-pre-wrap text-sm text-gray-200">
                 {message.content}
               </p>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {(message.reactions || []).map((reaction) => (
+                  <button
+                    key={reaction.emoji}
+                    type="button"
+                    onClick={() => toggleReaction(message.id, reaction.emoji)}
+                    aria-label={`${reaction.reacted ? "Remove" : "Add"} ${reaction.emoji} reaction`}
+                    className={`rounded-full border px-2 py-0.5 text-xs transition ${
+                      reaction.reacted
+                        ? "border-purple-400/70 bg-purple-500/20"
+                        : "border-white/10 bg-white/5 hover:bg-white/10"
+                    }`}
+                  >
+                    {reaction.emoji} <span className="text-gray-300">{reaction.count}</span>
+                  </button>
+                ))}
+                <div className="relative">
+                  
+                  {openReactionMenu === message.id && (
+                    <div className="absolute bottom-8 left-0 z-20 flex gap-1 rounded-xl border border-white/10 bg-neutral-950 p-2 shadow-xl">
+                      {reactionEmojis.map((emoji) => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          onClick={() => toggleReaction(message.id, emoji)}
+                          aria-label={`React with ${emoji}`}
+                          className="rounded-md px-1.5 py-1 text-base transition hover:bg-white/10"
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
             </article>
           ))}
           <div ref={messagesEndRef} />
@@ -200,12 +267,41 @@ export default function RoomChat({ roomId }) {
 
       <form onSubmit={sendMessage} className="mt-4 flex gap-2 border-t border-white/10 pt-4">
         <Input
+          className="min-w-0 flex-1"
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           maxLength={1000}
           placeholder="Write a message..."
           aria-label="Chat message"
         />
+        <div className="relative">
+          <Button
+            type="button"
+            variant="outline"
+            aria-label="Send an emoji"
+            aria-expanded={composerEmojiMenuOpen}
+            onClick={() => setComposerEmojiMenuOpen((open) => !open)}
+            disabled={sending}
+          >
+            🙂
+          </Button>
+          {composerEmojiMenuOpen && (
+            <div className="absolute bottom-full right-0 z-20 mb-2 flex gap-1 rounded-xl border border-white/10 bg-neutral-950 p-2 shadow-xl">
+              {reactionEmojis.map((emoji) => (
+                <button
+                  key={emoji}
+                  type="button"
+                  onClick={() => sendEmojiMessage(emoji)}
+                  aria-label={`Send ${emoji}`}
+                  className="rounded-md px-1.5 py-1 text-base transition hover:bg-white/10"
+                  disabled={sending}
+                >
+                  {emoji}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
         <Button type="submit" disabled={sending || !draft.trim()}>
           {sending ? "Sending..." : "Send"}
         </Button>

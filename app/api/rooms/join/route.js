@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { auth } from "@clerk/nextjs/server";
 import prisma from "@/lib/prisma";
+import { isRoomExpired } from "@/lib/roomAccess";
 
 export async function POST(request) {
   try {
@@ -41,11 +42,6 @@ export async function POST(request) {
     // 4. Find room using invite code
     const room = await prisma.room.findUnique({
       where: { inviteCode },
-      include: {
-        _count: {
-          select: { members: true },
-        },
-      },
     });
 
     if (!room) {
@@ -55,56 +51,93 @@ export async function POST(request) {
       );
     }
 
-    // 5. Check room status
-    if (room.status !== "WAITING") {
+    const joinResult = await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`
+        SELECT "id"
+        FROM "Room"
+        WHERE "id" = ${room.id}
+        FOR UPDATE
+      `;
+
+      const currentRoom = await tx.room.findUnique({
+        where: { id: room.id },
+      });
+
+      if (!currentRoom || currentRoom.status === "ENDED") {
+        return { status: "ended" };
+      }
+
+      if (isRoomExpired(currentRoom)) {
+        await tx.room.update({
+          where: { id: room.id },
+          data: { status: "ENDED", playbackIsPlaying: false },
+        });
+        return { status: "expired" };
+      }
+
+      if (currentRoom.status !== "WAITING") {
+        return { status: "not-accepting" };
+      }
+
+      const existingMember = await tx.roomMember.findUnique({
+        where: {
+          roomId_userId: {
+            roomId: room.id,
+            userId: user.id,
+          },
+        },
+      });
+
+      if (existingMember) {
+        return { status: "already-member" };
+      }
+
+      const memberCount = await tx.roomMember.count({
+        where: { roomId: room.id },
+      });
+
+      if (memberCount >= currentRoom.maxMembers) {
+        return { status: "full" };
+      }
+
+      await tx.roomMember.create({
+        data: {
+          roomId: room.id,
+          userId: user.id,
+          role: "MEMBER",
+        },
+      });
+
+      return { status: "joined" };
+    });
+
+    if (joinResult.status === "expired" || joinResult.status === "ended") {
+      return NextResponse.json({
+        error: "This room has ended or reached its time limit.",
+      }, { status: 410 });
+    }
+
+    if (joinResult.status === "not-accepting") {
       return NextResponse.json(
         { error: "This room is not accepting new members." },
         { status: 400 }
       );
     }
 
-    // 6. Check existing membership
-    const existingMember = await prisma.roomMember.findUnique({
-      where: {
-        roomId_userId: {
-          roomId: room.id,
-          userId: user.id,
-        },
-      },
-    });
-
-    if (existingMember) {
-      return NextResponse.json({
-        success: true,
-        message: "You are already a member of this room.",
-        room: {
-          id: room.id,
-          name: room.name,
-        },
-      });
-    }
-
-    // 7. Check room capacity
-    if (room._count.members >= room.maxMembers) {
+    if (joinResult.status === "full") {
       return NextResponse.json(
         { error: "This room is full." },
         { status: 409 }
       );
     }
 
-    // 8. Add user as a member
-    await prisma.roomMember.create({
-      data: {
-        roomId: room.id,
-        userId: user.id,
-        role: "MEMBER",
-      },
-    });
-
     return NextResponse.json(
       {
         success: true,
-        message: "Successfully joined the room.",
+        message:
+          joinResult.status === "already-member"
+            ? "You are already a member of this room."
+            : "Successfully joined the room.",
         room: {
           id: room.id,
           name: room.name,
@@ -115,6 +148,13 @@ export async function POST(request) {
 
   } catch (error) {
     console.error("Join Room Error:", error);
+
+    if (error.code === "P2034") {
+      return NextResponse.json(
+        { error: "Room membership changed. Please try joining again." },
+        { status: 409 }
+      );
+    }
 
     if (error.code === "P2002") {
       return NextResponse.json(

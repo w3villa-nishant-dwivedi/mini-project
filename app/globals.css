@@ -137,3 +137,68 @@
 .room-chat-messages::-webkit-scrollbar {
   display: none;
 }
+
+.theater-fullscreen {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 100 !important;
+  display: block !important;
+  width: 100vw !important;
+  height: 100dvh !important;
+  max-height: none !important;
+  aspect-ratio: auto !important;
+  gap: 0 !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  background: #000 !important;
+}
+
+.theater-fullscreen-video {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  aspect-ratio: auto !important;
+  flex: none !important;
+  padding: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+}
+
+.theater-fullscreen-chat {
+  position: absolute !important;
+  inset: auto 0 27px auto !important;
+  z-index: 20 !important;
+  flex: none !important;
+  min-height: 0 !important;
+  width: min(380px, 100vw) !important;
+  height: 30vh !important;
+  height: 30dvh !important;
+  max-height: none !important;
+  overflow: hidden !important;
+  border: 0 !important;
+  border-top: 1px solid rgb(255 255 255 / 20%) !important;
+  background: transparent !important;
+}
+
+.theater-fullscreen-chat > * {
+  position: relative !important;
+  inset: auto !important;
+  width: 100% !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+}
+
+@media (min-width: 768px) {
+  .theater-fullscreen-chat {
+    width: min(380px, 30vw) !important;
+  }
+}
+
+@media (min-width: 640px) {
+  .theater-fullscreen-chat {
+    bottom: 37px !important;
+  }
+}

@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server";
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import prisma from "@/lib/prisma";
-
+import { getSubscriptionLimits } from "@/lib/plans";
 
 
 export async function POST(request) {
@@ -50,6 +50,8 @@ export async function POST(request) {
       );
     }
 
+    const limits = getSubscriptionLimits(host.subscriptionPlan);
+
     // 4. Generate invite code
     const inviteCode = randomBytes(4)
       .toString("hex")
@@ -62,6 +64,9 @@ export async function POST(request) {
           name: roomName,
           hostId: host.id,
           inviteCode,
+          maxMembers: limits.maxMembers,
+          maxUploadBytes: BigInt(limits.maxUploadBytes),
+          maxDurationHours: limits.durationHours,
           members: {
             create: {
               userId: host.id,
